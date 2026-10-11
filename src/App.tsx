@@ -18,6 +18,7 @@ type Book = {
   coverUrl: string | null;
   subjects: string[];
   description: string;
+  personalNote?: string;
 };
 
 // Un résultat de recherche : une fiche résumée par l'API.
@@ -201,24 +202,48 @@ export default function App() {
 
   // ---- 3. AJOUTER À LA COLLECTION / RETIRER DE LA COLLECTION --------------------------
   function addToCollection(b: Book) {
-    if (collection.some((x) => x.isbn === b.isbn)) return; // pas de doublons
+    if (isInCollection(b.isbn)) {
+      setToast(`ℹ️ « ${b.title} » est déjà dans ta collection`);
+      setTimeout(() => setToast(null), 3000);
+      return;
+    }
     setCollection([...collection, b]);
     setToast(`✓ « ${b.title} » ajouté à ta collection`);
-    // Le message disparaît tout seul après 3 secondes
-    setTimeout(() => setToast(null), 3000);
+    setTimeout(() => setToast(null), 3000); // Le message disparaît tout seul après 3 secondes
     setBook(null); // on referme la fiche : l'action est faite, visible en bas
   }
+
   function removeFromCollection(isbn: string) {
     // "filter" garde les éléments qui satisfont la condition.
     // Ici : garde tous les livres SAUF celui dont l'isbn correspond.
     setCollection(collection.filter((x) => x.isbn !== isbn));
   }
 
-  // ---- 4. L'INTERFACE ---------------------------------------
+    // Le livre est-il déjà dans la collection ? (détection de doublon)
+  function isInCollection(isbn: string): boolean {
+    return collection.some((x) => x.isbn === isbn);
+  }
+
+  // METTRE À JOUR les notes d'un livre de la collection.
+  // Première vraie MUTATION : on ne change pas la liste, on
+  // remplace la liste par une version où UN livre a changé.
+  function updateNote(isbn: string, note: string) {
+    setCollection(
+      collection.map((x) =>
+        x.isbn === isbn ? { ...x, personalNote: note } : x
+      )
+    );
+  }
+
+    // ---- 4. L'INTERFACE ---------------------------------------
 
   return (
     <div className="min-h-screen bg-stone-50 text-stone-900">
       <div className="max-w-2xl mx-auto px-4 py-10">
+
+        {/* ============================================================
+            SECTION 1 : EN-TÊTE DE LA PAGE
+            ============================================================ */}
         <header className="mb-8">
           <h1 className="text-3xl font-bold tracking-tight">
             📚 Ma Bibliothèque
@@ -228,10 +253,14 @@ export default function App() {
           </p>
         </header>
 
-        {/* Navigation principale : les deux espaces */}
+        {/* ============================================================
+            SECTION 2 : NAVIGATION PRINCIPALE (les deux espaces)
+            Changer d'espace ferme la fiche ouverte : elle n'a plus
+            de raison d'être dans le nouvel espace.
+            ============================================================ */}
         <nav className="flex gap-2 mb-6 border-b border-stone-200 pb-3">
           <button
-            onClick={() => setView("search")}
+            onClick={() => { setView("search"); setBook(null); }}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
               view === "search"
                 ? "bg-stone-900 text-white"
@@ -241,7 +270,7 @@ export default function App() {
             🔍 Chercher
           </button>
           <button
-            onClick={() => setView("collection")}
+            onClick={() => { setView("collection"); setBook(null); }}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
               view === "collection"
                 ? "bg-stone-900 text-white"
@@ -252,7 +281,9 @@ export default function App() {
           </button>
         </nav>
 
-        {/* Le toast de confirmation, quel que soit l'espace */}
+        {/* ============================================================
+            SECTION 3 : LE TOAST (message de confirmation transitoire)
+            ============================================================ */}
         {toast && (
           <div className="mb-4 rounded-lg border border-green-200 bg-green-50
                           text-green-800 px-4 py-3 text-sm">
@@ -260,9 +291,132 @@ export default function App() {
           </div>
         )}
 
+                {/* ============================================================
+            SECTION 4 : LA FICHE DU LIVRE
+            Commune aux deux espaces — s'affiche dès que `book` existe,
+            que la fiche vienne d'une recherche OU de la collection.
+            ============================================================ */}
+        {book && status !== "loading" && (
+          <div className="mt-6 rounded-xl border border-stone-200 bg-white p-5
+                         flex gap-5 shadow-sm relative">
+
+            {/* SECTION 4A : croix de fermeture, toujours visible
+                (relative/absolute : la croix flotte en haut à droite,
+                ancrée au conteneur grâce au "relative" ci-dessus) */}
+            <button
+              onClick={() => setBook(null)}
+              aria-label="Fermer la fiche"
+              className="absolute top-3 right-3 w-8 h-8 rounded-full
+                         text-stone-400 hover\:text-stone-900 hover\:bg-stone-100
+                         transition-colors text-lg leading-none"
+            >
+              ✕
+            </button>
+
+            {/* SECTION 4B : couverture (ou placeholder) */}
+            {book.coverUrl ? (
+              <img
+                src={book.coverUrl}
+                alt={`Couverture de ${book.title}`}
+                className="w-24 h-36 object-cover rounded shadow-md"
+              />
+            ) : (
+              <div className="w-24 h-36 rounded bg-stone-200 flex items-center justify-center text-3xl">
+                📕
+              </div>
+            )}
+
+            <div className="flex-1">
+
+              {/* SECTION 4C : informations du livre */}
+              <h2 className="text-xl font-semibold">{book.title}</h2>
+              <p className="text-stone-600 mt-0.5">{book.author}</p>
+              <p className="text-sm text-stone-500 mt-2">
+                {book.publisher} · {book.year} · {book.pages}
+              </p>
+              <p className="text-xs text-stone-400 mt-1">ISBN {book.isbn}</p>
+              <p className="text-xs text-stone-400 mt-1">
+                Sujets : {book.subjects.length > 0 ? book.subjects.join(", ") : "—"}
+              </p>
+              <p className="text-xs text-stone-500 mt-1">
+                Description : {book.description || "—"}
+              </p>
+
+              {/* SECTION 4D : badge "déjà dans la collection" (+ retrait),
+                  OU bouton d'ajout */}
+              {isInCollection(book.isbn) ? (
+                <div className="mt-3 flex items-center gap-3 flex-wrap">
+                  <span className="text-sm text-green-700 bg-green-50 border
+                                   border-green-200 rounded-lg px-3 py-1.5">
+                    ✓ Dans ta collection
+                  </span>
+                  {view === "search" && (
+                    <button
+                      onClick={() => setView("collection")}
+                      className="text-sm text-stone-500 underline
+                                 hover:text-stone-800 transition-colors"
+                    >
+                      Voir dans ma collection
+                    </button>
+                  )}
+                  <button
+                    onClick={() => {
+                      removeFromCollection(book.isbn);
+                      setToast(`🗑 « ${book.title} » retiré de ta collection`);
+                      setTimeout(() => setToast(null), 3000);
+                    }}
+                    className="text-xs text-red-600 border border-red-200
+                               rounded-lg px-2 py-1 hover\:bg-red-50
+                               transition-colors"
+                  >
+                    Retirer de la collection
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => addToCollection(book)}
+                  className="mt-3 text-sm rounded-lg border border-stone-300 px-3 py-1.5
+                             hover:bg-stone-100 transition-colors"
+                >
+                  + Ajouter à ma collection
+                </button>
+              )}
+
+              {/* SECTION 4E : mes notes personnelles
+                  (uniquement si le livre est DANS la collection) */}
+              {isInCollection(book.isbn) && (
+                <div className="mt-4">
+                  <label className="block text-xs font-medium text-stone-500 mb-1">
+                    ✏️ Mes notes
+                  </label>
+                  <textarea
+                    value={collection.find((x) => x.isbn === book.isbn)?.personalNote ?? ""}
+                    onChange={(e) => updateNote(book.isbn, e.target.value)}
+                    placeholder="Mes impressions, citations préférées, où je l'ai rangé…"
+                    className="w-full rounded-lg border border-stone-300 px-3 py-2
+                               text-sm focus\:outline-none focus\:ring-2
+                               focus:ring-amber-400 bg-white min-h-24"
+                  />
+                </div>
+              )}
+
+              {/* NOTE : plus de boutons "← Retour" ici — remplacés par
+                  la croix (4A), qui ferme la fiche depuis n'importe
+                  quel espace. */}
+
+            </div>
+          </div>
+        )}
+
+        {/* ============================================================
+            SECTION 5 : LES DEUX ESPACES
+            Selon `view` : tout l'espace recherche, OU tout l'espace
+            collection. La fiche (section 4) vit AU-DESSUS, à part.
+            ============================================================ */}
         {view === "search" ? (
           <section>
-            {/* Bascule entre les deux modes de recherche */}
+
+            {/* SECTION 5A : onglets du mode de recherche (ISBN / titre) */}
             <div className="flex gap-2 mb-3">
               <button
                 onClick={() => { setMode("isbn"); setResults([]); setSearched(false); }}
@@ -286,7 +440,7 @@ export default function App() {
               </button>
             </div>
 
-            {/* Le formulaire actif selon le mode */}
+            {/* SECTION 5B : le formulaire actif selon le mode */}
             {mode === "isbn" ? (
               <form
                 onSubmit={(e) => {
@@ -341,7 +495,7 @@ export default function App() {
               </form>
             )}
 
-            {/* Bouton scanner : uniquement en mode ISBN, HORS du formulaire */}
+            {/* SECTION 5C : le scanner (uniquement en mode ISBN) */}
             {mode === "isbn" && (
               <button
                 onClick={() => setScannerOpen(!scannerOpen)}
@@ -362,14 +516,14 @@ export default function App() {
               />
             )}
 
-            {/* Bloc d'erreur — commun aux deux modes */}
+            {/* SECTION 5D : bloc d'erreur (commun aux deux modes) */}
             {status === "error" && (
               <div className="mt-6 rounded-lg border border-red-200 bg-red-50 text-red-700 px-4 py-3">
                 {errorMsg}
               </div>
             )}
 
-            {/* Liste des résultats de recherche par titre */}
+            {/* SECTION 5E : liste des résultats (mode titre, fiche fermée) */}
             {mode === "title" && results.length > 0 && !book && (
               <div className="mt-6">
                 <h2 className="font-semibold mb-3">
@@ -382,6 +536,7 @@ export default function App() {
                       className="rounded-lg border border-stone-200 bg-white px-4 py-3
                                  flex items-center gap-4"
                     >
+                      {/* mini couverture (ou placeholder) */}
                       {r.coverUrl ? (
                         <img
                           src={r.coverUrl}
@@ -393,12 +548,25 @@ export default function App() {
                           📕
                         </div>
                       )}
+
+                      {/* titre + infos */}
                       <div className="flex-1 min-w-0">
                         <p className="font-medium truncate">{r.title}</p>
                         <p className="text-sm text-stone-500">
-                          {r.author} · {r.year} · {r.publisher} · {r.isbn}
+                          {r.author} · {r.year} · {r.publisher}
                         </p>
                       </div>
+
+                      {/* badge "déjà en collection" */}
+                      {r.isbn && isInCollection(r.isbn) && (
+                        <span className="text-xs text-green-700 bg-green-50
+                                         border border-green-200 rounded px-2 py-0.5
+                                         whitespace-nowrap">
+                          ✓ collection
+                        </span>
+                      )}
+
+                      {/* bouton Voir */}
                       <button
                         onClick={() => r.isbn && searchBook(r.isbn)}
                         disabled={!r.isbn}
@@ -415,7 +583,7 @@ export default function App() {
               </div>
             )}
 
-            {/* Message "aucun résultat" pour la recherche par titre */}
+            {/* SECTION 5F : message "aucun résultat" (mode titre) */}
             {mode === "title" && searched && results.length === 0 && status === "idle" && (
               <p className="mt-6 text-stone-500 text-sm">
                 Aucun livre trouvé pour « {query} ». Essaie moins de mots, ou
@@ -423,67 +591,23 @@ export default function App() {
               </p>
             )}
 
-            {/* La fiche du livre */}
-            {book && status !== "loading" && (
-              <div className="mt-6 rounded-xl border border-stone-200 bg-white p-5 flex gap-5 shadow-sm">
-                {book.coverUrl ? (
-                  <img
-                    src={book.coverUrl}
-                    alt={`Couverture de ${book.title}`}
-                    className="w-24 h-36 object-cover rounded shadow-md"
-                  />
-                ) : (
-                  <div className="w-24 h-36 rounded bg-stone-200 flex items-center justify-center text-3xl">
-                    📕
-                  </div>
-                )}
-                <div className="flex-1">
-                  <h2 className="text-xl font-semibold">{book.title}</h2>
-                  <p className="text-stone-600 mt-0.5">{book.author}</p>
-                  <p className="text-sm text-stone-500 mt-2">
-                    {book.publisher} · {book.year} · {book.pages}
-                  </p>
-                  <p className="text-xs text-stone-400 mt-1">ISBN {book.isbn}</p>
-                  <p className="text-xs text-stone-400 mt-1">
-                    Sujets : {book.subjects.length > 0 ? book.subjects.join(", ") : "—"}
-                  </p>
-                  <p className="text-xs text-stone-500 mt-1">
-                    Description : {book.description || "—"}
-                  </p>
-
-                  {mode === "title" && results.length > 0 && (
-                    <button
-                      onClick={() => setBook(null)}
-                      className="mt-3 mr-2 text-sm rounded-lg border border-stone-300
-                                 px-3 py-1.5 hover:bg-stone-100 transition-colors"
-                    >
-                      ← Retour aux résultats
-                    </button>
-                  )}
-
-                  <button
-                    onClick={() => addToCollection(book)}
-                    className="mt-3 text-sm rounded-lg border border-stone-300 px-3 py-1.5
-                               hover:bg-stone-100 transition-colors"
-                  >
-                    + Ajouter à ma collection
-                  </button>
-                </div>
-              </div>
-            )}
           </section>
         ) : (
           <section>
+
+            {/* SECTION 6 : L'ESPACE COLLECTION */}
             <h2 className="font-semibold mb-3">
               Ma collection ({collection.length})
             </h2>
 
+            {/* SECTION 6A : message si la collection est vide */}
             {collection.length === 0 ? (
               <p className="text-stone-500 text-sm">
                 Ta collection est vide pour l'instant. Va dans « Chercher » pour
                 ajouter des livres.
               </p>
             ) : (
+              /* SECTION 6B : la liste des livres possédés */
               <ul className="grid grid-cols-1 gap-2">
                 {collection.map((b) => (
                   <li
@@ -491,7 +615,14 @@ export default function App() {
                     className="rounded-lg border border-stone-200 bg-white px-4 py-2.5
                                flex justify-between items-center text-sm gap-3"
                   >
-                    <span className="font-medium">{b.title}</span>
+                    {/* le titre est cliquable → ouvre la fiche (section 4) */}
+                    <button
+                      onClick={() => setBook(b)}
+                      className="font-medium text-left hover:text-amber-700
+                                 transition-colors"
+                    >
+                      {b.title}
+                    </button>
                     <div className="flex items-center gap-3">
                       <span className="text-stone-500">{b.author}</span>
                       <button
@@ -507,8 +638,10 @@ export default function App() {
                 ))}
               </ul>
             )}
+
           </section>
         )}
+
       </div>
     </div>
   );
