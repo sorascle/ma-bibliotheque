@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
-import { Html5Qrcode, Html5QrcodeSupportedFormats } from "html5-qrcode";
-
+import { Html5Qrcode, Html5QrcodeSupportedFormats, Html5QrcodeCameraScanConfig } from "html5-qrcode";
 type Props = {
   onScan: (code: string) => void;
 };
