@@ -1,8 +1,10 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import BarcodeScanner from "./BarcodeScanner";
 
 // ============================================================
-// MA BIBLIOTHÈQUE — V0 : chercher un livre à partir de son ISBN
+// MA BIBLIOTHÈQUE — V2.5
+// Cataloguer ses livres : scan, ISBN, recherche par titre,
+// fiches détaillées, notes personnelles, collection persistante.
 // ============================================================
 
 // Type décrivant un livre tel qu'on veut l'utiliser dans NOTRE app.
@@ -18,7 +20,8 @@ type Book = {
   coverUrl: string | null;
   subjects: string[];
   description: string;
-  personalNote?: string;
+  personalNote?: string; // optionnel : les livres sauvegardés avant
+                         // ce champ n'en ont pas (migration douce)
 };
 
 // Un résultat de recherche : une fiche résumée par l'API.
@@ -34,11 +37,14 @@ type SearchResult = {
 };
 
 export default function App() {
-  // ---- 1. L'ÉTAT DE L'APPLICATION ---------------------------
-  const [isbn, setIsbn] = useState(""); // ce que l'utilisateur tape
-  const [book, setBook] = useState<Book | null>(null); // le livre trouvé
+  // ============================================================
+  // PARTIE 1 : L'ÉTAT DE L'APPLICATION
+  // ============================================================
+  const [isbn, setIsbn] = useState(""); // ce que l'utilisateur tape (mode ISBN)
+  const [book, setBook] = useState<Book | null>(null); // le livre affiché en fiche
   const [status, setStatus] = useState<"idle" | "loading" | "error">("idle");
   const [errorMsg, setErrorMsg] = useState("");
+
   const [collection, setCollection] = useState<Book[]>(() => {
     // Version "paresseuse" : ce code ne s'exécute qu'une seule
     // fois, au premier rendu. On lit le localStorage, et s'il
@@ -50,19 +56,24 @@ export default function App() {
       return []; // données corrompues → repartir de zéro proprement
     }
   });
+
   const [scannerOpen, setScannerOpen] = useState(false);
 
   const [results, setResults] = useState<SearchResult[]>([]);
-  const [query, setQuery] = useState(""); // le texte tapé dans la recherche
+  const [query, setQuery] = useState(""); // le texte tapé (mode titre)
   const [mode, setMode] = useState<"isbn" | "title">("isbn"); // quel onglet
   const [searched, setSearched] = useState(false); // a-t-on déjà cherché ?
 
-    // Quelle espace affiche : la recherche, ou la collection
+  // Quel espace afficher : la recherche, ou la collection
   const [view, setView] = useState<"search" | "collection">("search");
+
   // Message de confirmation transitoire ("✓ ajouté")
   const [toast, setToast] = useState<string | null>(null);
-  
-  // ---- 1 bis. PERSISTANCE -------------------------------
+
+  // Texte de filtre dans la collection
+  const [collectionFilter, setCollectionFilter] = useState("");
+
+  // ---- 1 bis. PERSISTANCE ---------------------------------
   // useEffect dit à React : "après chaque rendu, SI collection
   // a changé depuis la dernière fois, exécute-moi cette fonction."
   // On déclare UNE FOIS la sauvegarde, et elle s'applique à
@@ -71,7 +82,9 @@ export default function App() {
     localStorage.setItem("collection", JSON.stringify(collection));
   }, [collection]); // <- la liste de dépendances : ce qui déclenche
 
-// ---- 2. LA FONCTION QUI APPELLE L'API (Open Library) ----
+  // ============================================================
+  // PARTIE 2 : RECHERCHE PAR ISBN (Open Library)
+  // ============================================================
   async function searchBook(rawIsbn: string) {
     const cleanIsbn = rawIsbn.replace(/[-\s]/g, "");
 
@@ -84,6 +97,8 @@ export default function App() {
     setStatus("loading");
     setErrorMsg("");
     setBook(null);
+    // NB : on NE VIDE PAS `results` ici — la liste des résultats
+    // survit à l'ouverture d'une fiche (pour pouvoir y revenir).
 
     try {
       // Requête 1 : le livre
@@ -101,7 +116,7 @@ export default function App() {
 
       const data = await res.json();
 
-      // Requête 2 : le nom de l'auteur (donnée morcelée, cf. V0)
+      // Requête 2 : le nom de l'auteur (donnée morcelée dans l'API)
       let author = "Auteur inconnu";
       if (data.authors?.[0]?.key) {
         const authorRes = await fetch(
@@ -113,7 +128,7 @@ export default function App() {
         }
       }
 
-      // description
+      // description (string OU objet { value: ... } selon l'API)
       const rawDesc = data.description;
       const description =
         typeof rawDesc === "string" ? rawDesc : (rawDesc?.value ?? "");
@@ -142,7 +157,9 @@ export default function App() {
     }
   }
 
-    // ---- 2 bis. RECHERCHE PAR TITRE/AUTEUR (Open Library, search API) ----
+  // ============================================================
+  // PARTIE 2 bis : RECHERCHE PAR TITRE/AUTEUR (search API)
+  // ============================================================
   async function searchByTitle(rawQuery: string) {
     const q = rawQuery.trim();
     if (q.length < 2) {
@@ -160,6 +177,7 @@ export default function App() {
     try {
       // encodeURIComponent : indispensable pour que les espaces et
       // accents d'une recherche soient transmis proprement dans l'URL.
+      // ⚠️ fields= est OBLIGATOIRE : sans lui, l'API ne renvoie pas isbn.
       const res = await fetch(
         `https://openlibrary.org/search.json?q=${encodeURIComponent(q)}&limit=20` +
         `&fields=key,title,author_name,first_publish_year,publisher,cover_i,isbn`
@@ -171,10 +189,10 @@ export default function App() {
 
       const data = await res.json();
 
-      // On mappe tous les docs vers SearchResult, en extrayant l'ISBN correctement.
-      // L'API retourne isbn comme tableau OU comme string.
+      // On mappe chaque "doc" vers notre format SearchResult.
+      // isbn peut être un tableau OU une string selon les docs.
       const mapped: SearchResult[] = data.docs
-        .slice(0, 12) // on limite à 12 résultats
+        .slice(0, 12) // on limite à 12 résultats affichés
         .map((doc: any) => ({
           key: doc.key,
           title: doc.title ?? "Titre inconnu",
@@ -184,9 +202,8 @@ export default function App() {
           coverUrl: doc.cover_i
             ? `https://covers.openlibrary.org/b/id/${doc.cover_i}-S.jpg`
             : null,
-          // isbn peut être un tableau ou une string : on prend le premier ou la string
-          isbn: Array.isArray(doc.isbn) 
-            ? (doc.isbn[0] ?? null) 
+          isbn: Array.isArray(doc.isbn)
+            ? (doc.isbn[0] ?? null)
             : (typeof doc.isbn === "string" ? doc.isbn : null),
         }));
 
@@ -200,7 +217,15 @@ export default function App() {
     }
   }
 
-  // ---- 3. AJOUTER À LA COLLECTION / RETIRER DE LA COLLECTION --------------------------
+  // ============================================================
+  // PARTIE 3 : GESTION DE LA COLLECTION
+  // ============================================================
+
+  // Le livre est-il déjà dans la collection ? (détection de doublon)
+  function isInCollection(isbn: string): boolean {
+    return collection.some((x) => x.isbn === isbn);
+  }
+
   function addToCollection(b: Book) {
     if (isInCollection(b.isbn)) {
       setToast(`ℹ️ « ${b.title} » est déjà dans ta collection`);
@@ -209,7 +234,7 @@ export default function App() {
     }
     setCollection([...collection, b]);
     setToast(`✓ « ${b.title} » ajouté à ta collection`);
-    setTimeout(() => setToast(null), 3000); // Le message disparaît tout seul après 3 secondes
+    setTimeout(() => setToast(null), 3000);
     setBook(null); // on referme la fiche : l'action est faite, visible en bas
   }
 
@@ -219,14 +244,9 @@ export default function App() {
     setCollection(collection.filter((x) => x.isbn !== isbn));
   }
 
-    // Le livre est-il déjà dans la collection ? (détection de doublon)
-  function isInCollection(isbn: string): boolean {
-    return collection.some((x) => x.isbn === isbn);
-  }
-
   // METTRE À JOUR les notes d'un livre de la collection.
-  // Première vraie MUTATION : on ne change pas la liste, on
-  // remplace la liste par une version où UN livre a changé.
+  // Une MUTATION : on ne modifie pas la liste, on la remplace
+  // par une version où UN seul livre a changé.
   function updateNote(isbn: string, note: string) {
     setCollection(
       collection.map((x) =>
@@ -235,8 +255,20 @@ export default function App() {
     );
   }
 
-    // ---- 4. L'INTERFACE ---------------------------------------
+  // ---- 3 bis. DÉRIVÉ : la collection filtrée ----------------
+  // Recalculée à chaque rendu (jamais stockée : règle d'or React,
+  // on ne stocke pas ce qui peut être recalculé).
+  // Insensible à la casse, cherche dans le titre ET l'auteur.
+  const filteredCollection = collection.filter((b) => {
+    const f = collectionFilter.trim().toLowerCase();
+    if (f === "") return true; // filtre vide → tout s'affiche
+    const haystack = `${b.title} ${b.author}`.toLowerCase();
+    return haystack.includes(f);
+  });
 
+  // ============================================================
+  // PARTIE 4 : L'INTERFACE
+  // ============================================================
   return (
     <div className="min-h-screen bg-stone-50 text-stone-900">
       <div className="max-w-2xl mx-auto px-4 py-10">
@@ -255,8 +287,7 @@ export default function App() {
 
         {/* ============================================================
             SECTION 2 : NAVIGATION PRINCIPALE (les deux espaces)
-            Changer d'espace ferme la fiche ouverte : elle n'a plus
-            de raison d'être dans le nouvel espace.
+            Changer d'espace ferme la fiche ouverte.
             ============================================================ */}
         <nav className="flex gap-2 mb-6 border-b border-stone-200 pb-3">
           <button
@@ -282,7 +313,7 @@ export default function App() {
         </nav>
 
         {/* ============================================================
-            SECTION 3 : LE TOAST (message de confirmation transitoire)
+            SECTION 3 : LE TOAST (confirmation transitoire)
             ============================================================ */}
         {toast && (
           <div className="mb-4 rounded-lg border border-green-200 bg-green-50
@@ -291,23 +322,22 @@ export default function App() {
           </div>
         )}
 
-                {/* ============================================================
+        {/* ============================================================
             SECTION 4 : LA FICHE DU LIVRE
             Commune aux deux espaces — s'affiche dès que `book` existe,
-            que la fiche vienne d'une recherche OU de la collection.
+            qu'il vienne d'une recherche OU de la collection.
             ============================================================ */}
         {book && status !== "loading" && (
           <div className="mt-6 rounded-xl border border-stone-200 bg-white p-5
                          flex gap-5 shadow-sm relative">
 
             {/* SECTION 4A : croix de fermeture, toujours visible
-                (relative/absolute : la croix flotte en haut à droite,
-                ancrée au conteneur grâce au "relative" ci-dessus) */}
+                (relative/absolute : ancrée au conteneur) */}
             <button
               onClick={() => setBook(null)}
               aria-label="Fermer la fiche"
               className="absolute top-3 right-3 w-8 h-8 rounded-full
-                         text-stone-400 hover\:text-stone-900 hover\:bg-stone-100
+                         text-stone-400 hover:text-stone-900 hover:bg-stone-100
                          transition-colors text-lg leading-none"
             >
               ✕
@@ -342,7 +372,7 @@ export default function App() {
                 Description : {book.description || "—"}
               </p>
 
-              {/* SECTION 4D : badge "déjà dans la collection" (+ retrait),
+              {/* SECTION 4D : badge "dans la collection" (+ retrait),
                   OU bouton d'ajout */}
               {isInCollection(book.isbn) ? (
                 <div className="mt-3 flex items-center gap-3 flex-wrap">
@@ -366,7 +396,7 @@ export default function App() {
                       setTimeout(() => setToast(null), 3000);
                     }}
                     className="text-xs text-red-600 border border-red-200
-                               rounded-lg px-2 py-1 hover\:bg-red-50
+                               rounded-lg px-2 py-1 hover:bg-red-50
                                transition-colors"
                   >
                     Retirer de la collection
@@ -394,15 +424,11 @@ export default function App() {
                     onChange={(e) => updateNote(book.isbn, e.target.value)}
                     placeholder="Mes impressions, citations préférées, où je l'ai rangé…"
                     className="w-full rounded-lg border border-stone-300 px-3 py-2
-                               text-sm focus\:outline-none focus\:ring-2
+                               text-sm focus:outline-none focus:ring-2
                                focus:ring-amber-400 bg-white min-h-24"
                   />
                 </div>
               )}
-
-              {/* NOTE : plus de boutons "← Retour" ici — remplacés par
-                  la croix (4A), qui ferme la fiche depuis n'importe
-                  quel espace. */}
 
             </div>
           </div>
@@ -595,21 +621,54 @@ export default function App() {
         ) : (
           <section>
 
-            {/* SECTION 6 : L'ESPACE COLLECTION */}
+            {/* ============================================================
+                SECTION 6 : L'ESPACE COLLECTION
+                ============================================================ */}
             <h2 className="font-semibold mb-3">
-              Ma collection ({collection.length})
+              Ma collection ({filteredCollection.length}
+              {collectionFilter.trim() && ` sur ${collection.length}`})
             </h2>
 
-            {/* SECTION 6A : message si la collection est vide */}
+            {/* SECTION 6A : champ de recherche dans la collection
+                (avec croix ✕ pour le vider d'un clic) */}
+            {collection.length > 0 && (
+              <div className="relative mb-3">
+                <input
+                  value={collectionFilter}
+                  onChange={(e) => setCollectionFilter(e.target.value)}
+                  placeholder="Rechercher dans ma collection…"
+                  className="w-full rounded-lg border border-stone-300 px-4 py-2
+                             text-sm focus:outline-none focus:ring-2
+                             focus:ring-amber-400 bg-white"
+                />
+                {collectionFilter && (
+                  <button
+                    onClick={() => setCollectionFilter("")}
+                    aria-label="Effacer la recherche"
+                    className="absolute right-2 top-1/2 -translate-y-1/2
+                               w-6 h-6 rounded-full text-stone-400
+                               hover:text-stone-900 hover:bg-stone-100
+                               transition-colors text-sm leading-none"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* SECTION 6B : liste (filtrée) OU messages */}
             {collection.length === 0 ? (
               <p className="text-stone-500 text-sm">
                 Ta collection est vide pour l'instant. Va dans « Chercher » pour
                 ajouter des livres.
               </p>
+            ) : filteredCollection.length === 0 ? (
+              <p className="text-stone-500 text-sm">
+                Aucun livre ne correspond à « {collectionFilter} ».
+              </p>
             ) : (
-              /* SECTION 6B : la liste des livres possédés */
               <ul className="grid grid-cols-1 gap-2">
-                {collection.map((b) => (
+                {filteredCollection.map((b) => (
                   <li
                     key={b.isbn}
                     className="rounded-lg border border-stone-200 bg-white px-4 py-2.5

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from "html5-qrcode";
 
 type Props = {
@@ -17,26 +17,37 @@ export default function BarcodeScanner({ onScan }: Props) {
     // Drapeau "le composant a été démonté pendant le démarrage"
     let cancelled = false;
 
+    // ⬇️ NOUVEAU : le type du config est ÉLARGI. Les types officiels
+    // de html5-qrcode ne connaissent pas encore formatsToSupport ni
+    // experimentalFeatures, alors qu'ils existent bel et bien à
+    // l'exécution (cf. doc de la bibliothèque). Le "&" entre deux
+    // types signifie "les deux à la fois" : tout ce que la lib
+    // connaît, PLUS nos deux options additionnelles.
+    const scanConfig: Html5QrcodeCameraScanConfig & {
+      formatsToSupport: number[];
+      experimentalFeatures: { useBarCodeDetectorIfSupported: boolean };
+    } = {
+      fps: 10,
+      // Fenêtre allongée : un code-barres est large et bas,
+      // il doit tenir ENTIÈREMENT dans la fenêtre.
+      qrbox: { width: 300, height: 120 },
+      formatsToSupport: [
+        Html5QrcodeSupportedFormats.EAN_13,
+        Html5QrcodeSupportedFormats.EAN_8,
+        Html5QrcodeSupportedFormats.UPC_A,
+        Html5QrcodeSupportedFormats.UPC_E,
+      ],
+      // Le lecteur de codes-barres NATIF du navigateur : bien
+      // meilleur que la détection logicielle sur les barres fines.
+      experimentalFeatures: {
+        useBarCodeDetectorIfSupported: true,
+      },
+    };
+
     scanner
       .start(
         { facingMode: "environment" },
-        {
-          fps: 10,
-          // Fenêtre allongée : un code-barres est large et bas,
-          // il doit tenir ENTIÈREMMENT dans la fenêtre.
-          qrbox: { width: 300, height: 120 },
-          formatsToSupport: [
-            Html5QrcodeSupportedFormats.EAN_13,
-            Html5QrcodeSupportedFormats.EAN_8,
-            Html5QrcodeSupportedFormats.UPC_A,
-            Html5QrcodeSupportedFormats.UPC_E,
-          ],
-          // Le lecteur de codes-barres NATIF du navigateur : bien
-          // meilleur que la détection logicielle sur les barres fines.
-          experimentalFeatures: {
-            useBarCodeDetectorIfSupported: true,
-          },
-        },
+        scanConfig, // ⬅️ le config typé élargi, passé ici
         (decodedText) => {
           console.log("Code lu :", decodedText);
           if (!cancelled) onScan(decodedText);
@@ -45,7 +56,7 @@ export default function BarcodeScanner({ onScan }: Props) {
       )
       .then(() => {
         if (cancelled) {
-          // Démasqué trop tard : le composant est parti pendant
+          // Démarré trop tard : le composant est parti pendant
           // le démarrage. On éteint derrière nous.
           scanner.stop().then(() => scanner.clear()).catch(() => {});
         } else {
