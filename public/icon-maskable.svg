@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- fond PLEIN CADRE : Android rognera lui-même -->
+  <rect width="512" height="512" fill="#d97706"/>
+  <!-- livres resserrés dans la zone de sûreté (~cercle central 80%) -->
+  <g transform="translate(256 266) scale(0.62)">
+    <rect x="-130" y="-120" width="70" height="240" rx="10"
+          fill="#fafaf9" transform="rotate(-12)"/>
+    <rect x="-40"  y="-130" width="70" height="250" rx="10"
+          fill="#fafaf9" transform="rotate(-4)"/>
+    <rect x="52"   y="-115" width="70" height="235" rx="10"
+          fill="#fafaf9" transform="rotate(8)"/>
+    <rect x="-130" y="-120" width="16" height="240" rx="8"
+          fill="#b45309" transform="rotate(-12)"/>
+    <rect x="-40"  y="-130" width="16" height="250" rx="8"
+          fill="#92400e" transform="rotate(-4)"/>
+    <rect x="52"   y="-115" width="16" height="235" rx="8"
+          fill="#b45309" transform="rotate(8)"/>
+  </g>
+</svg>
