@@ -1,5 +1,20 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- fond ambre, coins arrondis -->
   <rect width="512" height="512" rx="96" fill="#d97706"/>
-  <text x="256" y="278" font-size="280" text-anchor="middle"
-        dominant-baseline="central" font-family="system-ui, sans-serif">📚</text>
+  <!-- trois livres inclinés, dessinés en formes pures -->
+  <g transform="translate(256 280)">
+    <rect x="-130" y="-120" width="70" height="240" rx="10"
+          fill="#fafaf9" transform="rotate(-12)"/>
+    <rect x="-40"  y="-130" width="70" height="250" rx="10"
+          fill="#fafaf9" transform="rotate(-4)"/>
+    <rect x="52"   y="-115" width="70" height="235" rx="10"
+      fill="#fafaf9" transform="rotate(8)"/>
+    <!-- tranche colorée sur chaque livre -->
+    <rect x="-130" y="-120" width="16" height="240" rx="8"
+          fill="#b45309" transform="rotate(-12)"/>
+    <rect x="-40"  y="-130" width="16" height="250" rx="8"
+          fill="#92400e" transform="rotate(-4)"/>
+    <rect x="52"   y="-115" width="16" height="235" rx="8"
+          fill="#b45309" transform="rotate(8)"/>
+  </g>
 </svg>
